@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS api_keys;
+DROP TABLE IF EXISTS tool_executions;
+DROP TABLE IF EXISTS tools;
+DROP TABLE IF EXISTS execution_steps;
+DROP TABLE IF EXISTS executions;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS conversations;
+DROP TABLE IF EXISTS agent_versions;
+DROP TABLE IF EXISTS agents;
+DROP TABLE IF EXISTS users;
