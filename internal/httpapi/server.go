@@ -30,6 +30,10 @@ type Dependencies struct {
 	Tools   *tool.Registry
 }
 
+func init() {
+	gin.SetMode(gin.ReleaseMode)
+}
+
 type API struct {
 	service  *app.Service
 	logger   *slog.Logger
@@ -39,7 +43,6 @@ type API struct {
 }
 
 func New(dependencies Dependencies) *http.Server {
-	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	api := &API{
 		service: dependencies.Service,
