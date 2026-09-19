@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentflow-worker
+  labels: &labels
+    app.kubernetes.io/name: agentflow
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels: *labels
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: worker
+          image: ghcr.io/sagarbagwe/agentflow:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: RUN_MODE, value: worker}
+          envFrom:
+            - configMapRef: {name: agentflow-config}
+            - secretRef: {name: agentflow-secrets}
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {cpu: "2", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+      terminationGracePeriodSeconds: 60
