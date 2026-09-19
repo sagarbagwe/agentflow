@@ -8,21 +8,22 @@ import (
 )
 
 type Config struct {
-	HTTP              HTTPConfig
-	DatabaseURL       string
-	RedisAddr         string
-	RedisPassword     string
-	RedisDB           int
-	QueueKey          string
-	WorkerConcurrency int
-	JWTSecret         string
-	APIKey            string
-	APIKeyUser        string
-	LLMBaseURL        string
-	LLMAPIKey         string
-	LLMProvider       string
-	RunMode           string
-	OTLPEndpoint      string
+	HTTP               HTTPConfig
+	DatabaseURL        string
+	RedisAddr          string
+	RedisPassword      string
+	RedisDB            int
+	QueueKey           string
+	EventChannelPrefix string
+	WorkerConcurrency  int
+	JWTSecret          string
+	APIKey             string
+	APIKeyUser         string
+	LLMBaseURL         string
+	LLMAPIKey          string
+	LLMProvider        string
+	RunMode            string
+	OTLPEndpoint       string
 }
 
 type HTTPConfig struct {
@@ -67,20 +68,21 @@ func Load() (Config, error) {
 			WriteTimeout:      writeTimeout,
 			IdleTimeout:       idleTimeout,
 		},
-		DatabaseURL:       os.Getenv("DATABASE_URL"),
-		RedisAddr:         os.Getenv("REDIS_ADDR"),
-		RedisPassword:     os.Getenv("REDIS_PASSWORD"),
-		RedisDB:           redisDB,
-		QueueKey:          stringFromEnv("REDIS_QUEUE_KEY", "agentflow:jobs"),
-		WorkerConcurrency: workerConcurrency,
-		JWTSecret:         stringFromEnv("JWT_SECRET", "development-only-change-me"),
-		APIKey:            stringFromEnv("AGENTFLOW_API_KEY", "dev-agentflow-key"),
-		APIKeyUser:        stringFromEnv("AGENTFLOW_API_KEY_USER", "00000000-0000-0000-0000-000000000001"),
-		LLMBaseURL:        stringFromEnv("LLM_BASE_URL", "https://api.openai.com/v1"),
-		LLMAPIKey:         os.Getenv("LLM_API_KEY"),
-		LLMProvider:       stringFromEnv("LLM_PROVIDER", "mock"),
-		RunMode:           stringFromEnv("RUN_MODE", "all"),
-		OTLPEndpoint:      os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		RedisAddr:          os.Getenv("REDIS_ADDR"),
+		RedisPassword:      os.Getenv("REDIS_PASSWORD"),
+		RedisDB:            redisDB,
+		QueueKey:           stringFromEnv("REDIS_QUEUE_KEY", "agentflow:jobs"),
+		EventChannelPrefix: stringFromEnv("REDIS_EVENT_PREFIX", "agentflow:events:"),
+		WorkerConcurrency:  workerConcurrency,
+		JWTSecret:          stringFromEnv("JWT_SECRET", "development-only-change-me"),
+		APIKey:             stringFromEnv("AGENTFLOW_API_KEY", "dev-agentflow-key"),
+		APIKeyUser:         stringFromEnv("AGENTFLOW_API_KEY_USER", "00000000-0000-0000-0000-000000000001"),
+		LLMBaseURL:         stringFromEnv("LLM_BASE_URL", "https://api.openai.com/v1"),
+		LLMAPIKey:          os.Getenv("LLM_API_KEY"),
+		LLMProvider:        stringFromEnv("LLM_PROVIDER", "mock"),
+		RunMode:            stringFromEnv("RUN_MODE", "all"),
+		OTLPEndpoint:       os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 	}, nil
 }
 

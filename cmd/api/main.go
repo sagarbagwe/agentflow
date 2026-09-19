@@ -71,7 +71,13 @@ func main() {
 		logger.Error("tool registry initialization failed", "error", err)
 		os.Exit(1)
 	}
-	broker := realtime.NewBroker()
+	broker, closeBroker, err := buildEventStream(ctx, cfg)
+	if err != nil {
+		logger.Error("event broker initialization failed", "error", err)
+		os.Exit(1)
+	}
+	defer closeBroker()
+
 	provider := buildProvider(cfg)
 	metrics := observability.NewMetrics()
 	engine := workflow.NewEngine(provider, registry, storage, broker, metrics)
@@ -155,6 +161,18 @@ func buildQueue(ctx context.Context, cfg config.Config) (queue.Queue, func(), er
 		return nil, func() {}, err
 	}
 	return queue.NewRedis(client, cfg.QueueKey), func() { _ = client.Close() }, nil
+}
+
+func buildEventStream(ctx context.Context, cfg config.Config) (realtime.Stream, func(), error) {
+	if cfg.RedisAddr == "" {
+		return realtime.NewBroker(), func() {}, nil
+	}
+	client := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB})
+	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
+		return nil, func() {}, err
+	}
+	return realtime.NewRedisBroker(client, cfg.EventChannelPrefix), func() { _ = client.Close() }, nil
 }
 
 func buildProvider(cfg config.Config) llm.Provider {

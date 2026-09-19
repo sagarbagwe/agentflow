@@ -26,7 +26,7 @@ type Dependencies struct {
 	Service *app.Service
 	Auth    *auth.Authenticator
 	Metrics *observability.Metrics
-	Broker  *realtime.Broker
+	Broker  realtime.Stream
 	Tools   *tool.Registry
 }
 
@@ -37,7 +37,7 @@ func init() {
 type API struct {
 	service  *app.Service
 	logger   *slog.Logger
-	broker   *realtime.Broker
+	broker   realtime.Stream
 	tools    *tool.Registry
 	upgrader websocket.Upgrader
 }

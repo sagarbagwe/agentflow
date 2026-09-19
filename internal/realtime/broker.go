@@ -7,6 +7,11 @@ import (
 	"github.com/sagarbagwe/agentflow/internal/workflow"
 )
 
+type Stream interface {
+	workflow.EventSink
+	Subscribe(string) (<-chan workflow.Event, func())
+}
+
 type Broker struct {
 	mu          sync.RWMutex
 	subscribers map[string]map[chan workflow.Event]struct{}
