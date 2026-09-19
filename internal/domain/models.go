@@ -3,18 +3,18 @@ package domain
 import "time"
 
 type Agent struct {
-	ID           string         `json:"id"`
-	OwnerID      string         `json:"owner_id"`
-	Name         string         `json:"name"`
-	Description  string         `json:"description,omitempty"`
-	SystemPrompt string         `json:"system_prompt"`
-	Model        string         `json:"model"`
-	Temperature  float64        `json:"temperature"`
-	MaxTokens    int            `json:"max_tokens"`
-	Tools        []string       `json:"tools"`
-	Version      int            `json:"version"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	ID           string    `json:"id"`
+	OwnerID      string    `json:"owner_id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description,omitempty"`
+	SystemPrompt string    `json:"system_prompt"`
+	Model        string    `json:"model"`
+	Temperature  float64   `json:"temperature"`
+	MaxTokens    int       `json:"max_tokens"`
+	Tools        []string  `json:"tools"`
+	Version      int       `json:"version"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type ExecutionStatus string
@@ -62,5 +62,5 @@ type Step struct {
 
 type Trace struct {
 	Execution Execution `json:"execution"`
-	Steps     []Step     `json:"steps"`
+	Steps     []Step    `json:"steps"`
 }

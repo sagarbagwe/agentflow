@@ -55,12 +55,12 @@ func testServer(t *testing.T) *http.Server {
 		t.Fatal(err)
 	}
 	return New(Dependencies{
-		Config: config.HTTPConfig{ReadHeaderTimeout: time.Second},
-		Logger: logger,
+		Config:  config.HTTPConfig{ReadHeaderTimeout: time.Second},
+		Logger:  logger,
 		Service: app.New(storage, queue.NewImmediate(10)),
-		Auth: auth.New("test-secret", "test-key", "test-user"),
+		Auth:    auth.New("test-secret", "test-key", "test-user"),
 		Metrics: observability.NewMetrics(),
-		Broker: realtime.NewBroker(),
-		Tools: registry,
+		Broker:  realtime.NewBroker(),
+		Tools:   registry,
 	})
 }
