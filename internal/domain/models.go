@@ -17,6 +17,25 @@ type Agent struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type Conversation struct {
+	ID        string    `json:"id"`
+	OwnerID   string    `json:"owner_id"`
+	AgentID   string    `json:"agent_id"`
+	Title     string    `json:"title"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type Message struct {
+	ID             string         `json:"id"`
+	ConversationID string         `json:"conversation_id"`
+	Role           string         `json:"role"`
+	Content        string         `json:"content"`
+	ToolCallID     string         `json:"tool_call_id,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
+}
+
 type ExecutionStatus string
 
 const (

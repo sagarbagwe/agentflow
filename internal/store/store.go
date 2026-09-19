@@ -19,6 +19,13 @@ type AgentStore interface {
 	DeleteAgent(context.Context, string, string) error
 }
 
+type ConversationStore interface {
+	CreateConversation(context.Context, domain.Conversation) error
+	GetConversation(context.Context, string, string) (domain.Conversation, error)
+	AppendMessage(context.Context, domain.Message) error
+	ListMessages(context.Context, string, string, int) ([]domain.Message, error)
+}
+
 type ExecutionStore interface {
 	CreateExecution(context.Context, domain.Execution) error
 	GetExecution(context.Context, string, string) (domain.Execution, error)
@@ -31,5 +38,6 @@ type ExecutionStore interface {
 
 type Store interface {
 	AgentStore
+	ConversationStore
 	ExecutionStore
 }

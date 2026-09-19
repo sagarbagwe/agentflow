@@ -8,14 +8,22 @@ import (
 )
 
 type Memory struct {
-	mu         sync.RWMutex
-	agents     map[string]domain.Agent
-	executions map[string]domain.Execution
-	steps      map[string][]domain.Step
+	mu            sync.RWMutex
+	agents        map[string]domain.Agent
+	executions    map[string]domain.Execution
+	steps         map[string][]domain.Step
+	conversations map[string]domain.Conversation
+	messages      map[string][]domain.Message
 }
 
 func NewMemory() *Memory {
-	return &Memory{agents: make(map[string]domain.Agent), executions: make(map[string]domain.Execution), steps: make(map[string][]domain.Step)}
+	return &Memory{
+		agents:        make(map[string]domain.Agent),
+		executions:    make(map[string]domain.Execution),
+		steps:         make(map[string][]domain.Step),
+		conversations: make(map[string]domain.Conversation),
+		messages:      make(map[string][]domain.Message),
+	}
 }
 
 func (m *Memory) CreateAgent(_ context.Context, agent domain.Agent) error {
@@ -58,6 +66,50 @@ func (m *Memory) DeleteAgent(_ context.Context, ownerID, agentID string) error {
 	}
 	delete(m.agents, agentID)
 	return nil
+}
+
+func (m *Memory) CreateConversation(_ context.Context, conversation domain.Conversation) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.conversations[conversation.ID]; exists {
+		return ErrConflict
+	}
+	m.conversations[conversation.ID] = conversation
+	return nil
+}
+
+func (m *Memory) GetConversation(_ context.Context, ownerID, conversationID string) (domain.Conversation, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	conversation, ok := m.conversations[conversationID]
+	if !ok || conversation.OwnerID != ownerID {
+		return domain.Conversation{}, ErrNotFound
+	}
+	return conversation, nil
+}
+
+func (m *Memory) AppendMessage(_ context.Context, message domain.Message) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.conversations[message.ConversationID]; !ok {
+		return ErrNotFound
+	}
+	m.messages[message.ConversationID] = append(m.messages[message.ConversationID], message)
+	return nil
+}
+
+func (m *Memory) ListMessages(_ context.Context, ownerID, conversationID string, limit int) ([]domain.Message, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	conversation, ok := m.conversations[conversationID]
+	if !ok || conversation.OwnerID != ownerID {
+		return nil, ErrNotFound
+	}
+	messages := m.messages[conversationID]
+	if len(messages) > limit {
+		messages = messages[len(messages)-limit:]
+	}
+	return append([]domain.Message(nil), messages...), nil
 }
 
 func (m *Memory) CreateExecution(_ context.Context, execution domain.Execution) error {

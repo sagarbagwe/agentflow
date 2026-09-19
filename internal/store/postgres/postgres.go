@@ -110,6 +110,62 @@ func (s *Store) DeleteAgent(ctx context.Context, ownerID, agentID string) error 
 	return nil
 }
 
+func (s *Store) CreateConversation(ctx context.Context, conversation domain.Conversation) error {
+	_, err := s.pool.Exec(ctx, `INSERT INTO conversations (id,owner_id,agent_id,title,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6)`, conversation.ID, conversation.OwnerID, conversation.AgentID, conversation.Title, conversation.CreatedAt, conversation.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("create conversation: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) GetConversation(ctx context.Context, ownerID, conversationID string) (domain.Conversation, error) {
+	var conversation domain.Conversation
+	err := s.pool.QueryRow(ctx, `SELECT id,owner_id,agent_id,title,created_at,updated_at FROM conversations WHERE owner_id=$1 AND id=$2`, ownerID, conversationID).Scan(&conversation.ID, &conversation.OwnerID, &conversation.AgentID, &conversation.Title, &conversation.CreatedAt, &conversation.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Conversation{}, store.ErrNotFound
+	}
+	if err != nil {
+		return domain.Conversation{}, fmt.Errorf("get conversation: %w", err)
+	}
+	return conversation, nil
+}
+
+func (s *Store) AppendMessage(ctx context.Context, message domain.Message) error {
+	metadata, err := json.Marshal(message.Metadata)
+	if err != nil {
+		return fmt.Errorf("encode message metadata: %w", err)
+	}
+	_, err = s.pool.Exec(ctx, `INSERT INTO messages (id,conversation_id,role,content,tool_call_id,metadata,created_at) VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,$7)`, message.ID, message.ConversationID, message.Role, message.Content, message.ToolCallID, metadata, message.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("append message: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListMessages(ctx context.Context, ownerID, conversationID string, limit int) ([]domain.Message, error) {
+	rows, err := s.pool.Query(ctx, `
+SELECT id,conversation_id,role,content,COALESCE(tool_call_id,''),metadata,created_at FROM (
+  SELECT m.id,m.conversation_id,m.role,m.content,m.tool_call_id,m.metadata,m.created_at
+  FROM messages m JOIN conversations c ON c.id=m.conversation_id
+  WHERE c.owner_id=$1 AND c.id=$2 ORDER BY m.created_at DESC LIMIT $3
+) recent ORDER BY created_at`, ownerID, conversationID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list messages: %w", err)
+	}
+	defer rows.Close()
+	var messages []domain.Message
+	for rows.Next() {
+		var message domain.Message
+		var metadata []byte
+		if err := rows.Scan(&message.ID, &message.ConversationID, &message.Role, &message.Content, &message.ToolCallID, &metadata, &message.CreatedAt); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal(metadata, &message.Metadata)
+		messages = append(messages, message)
+	}
+	return messages, rows.Err()
+}
+
 func (s *Store) CreateExecution(ctx context.Context, execution domain.Execution) error {
 	_, err := s.pool.Exec(ctx, `
 INSERT INTO executions (id, request_id, idempotency_key, agent_id, agent_version, owner_id, conversation_id, input, output, status, model, prompt_tokens, output_tokens, retry_count, error, started_at, completed_at, created_at)

@@ -24,7 +24,7 @@ import (
 type Engine struct {
 	provider    llm.Provider
 	tools       *tool.Registry
-	store       store.ExecutionStore
+	store       store.Store
 	events      EventSink
 	retryPolicy reliability.RetryPolicy
 	breaker     *reliability.CircuitBreaker
@@ -33,7 +33,7 @@ type Engine struct {
 	metrics     *observability.Metrics
 }
 
-func NewEngine(provider llm.Provider, tools *tool.Registry, storage store.ExecutionStore, events EventSink, metrics *observability.Metrics) *Engine {
+func NewEngine(provider llm.Provider, tools *tool.Registry, storage store.Store, events EventSink, metrics *observability.Metrics) *Engine {
 	return &Engine{
 		provider: provider,
 		tools:    tools,
@@ -69,7 +69,20 @@ func (e *Engine) Execute(ctx context.Context, agent domain.Agent, execution doma
 	}
 	_ = e.events.Publish(ctx, Event{ExecutionID: execution.ID, Type: "agent.started", Timestamp: now})
 
-	messages := []llm.Message{{Role: "user", Content: execution.Input}}
+	history, err := e.store.ListMessages(ctx, execution.OwnerID, execution.ConversationID, 50)
+	if err != nil {
+		return e.fail(ctx, execution, fmt.Errorf("load conversation memory: %w", err))
+	}
+	messages := make([]llm.Message, 0, len(history)+1)
+	for _, message := range history {
+		messages = append(messages, llm.Message{Role: message.Role, Content: message.Content, ToolCallID: message.ToolCallID})
+	}
+	userMessage := llm.Message{Role: "user", Content: execution.Input}
+	if err := e.appendMessage(ctx, execution.ConversationID, userMessage); err != nil {
+		return e.fail(ctx, execution, err)
+	}
+	messages = append(messages, userMessage)
+
 	for stepNumber := 0; stepNumber < e.maxSteps; stepNumber++ {
 		if err := ctx.Err(); err != nil {
 			return e.fail(ctx, execution, err)
@@ -136,13 +149,25 @@ func (e *Engine) Execute(ctx context.Context, agent domain.Agent, execution doma
 
 		if len(response.ToolCalls) == 0 {
 			execution.Output = response.Content
+			if err := e.appendMessage(ctx, execution.ConversationID, llm.Message{Role: "assistant", Content: response.Content}); err != nil {
+				return e.fail(ctx, execution, err)
+			}
 			return e.succeed(ctx, execution)
 		}
 
-		messages = append(messages, llm.Message{Role: "assistant", Content: response.Content})
+		assistantMessage := llm.Message{Role: "assistant", Content: response.Content}
+		messages = append(messages, assistantMessage)
+		if err := e.appendMessage(ctx, execution.ConversationID, assistantMessage); err != nil {
+			return e.fail(ctx, execution, err)
+		}
 		toolMessages, err := e.executeTools(ctx, execution.ID, response.ToolCalls)
 		if err != nil {
 			return e.fail(ctx, execution, err)
+		}
+		for _, toolMessage := range toolMessages {
+			if err := e.appendMessage(ctx, execution.ConversationID, toolMessage); err != nil {
+				return e.fail(ctx, execution, err)
+			}
 		}
 		messages = append(messages, toolMessages...)
 	}
@@ -215,6 +240,26 @@ func (e *Engine) executeTool(ctx context.Context, executionID string, call llm.T
 	}
 	_ = e.events.Publish(ctx, Event{ExecutionID: executionID, Type: "tool.completed", StepID: stepID, Data: map[string]any{"tool": call.Name}, Timestamp: completedAt})
 	return llm.Message{Role: "tool", Name: call.Name, ToolCallID: call.ID, Content: string(encoded)}, nil
+}
+
+func (e *Engine) appendMessage(ctx context.Context, conversationID string, message llm.Message) error {
+	messageID, err := id.New()
+	if err != nil {
+		return err
+	}
+	stored := domain.Message{
+		ID:             messageID,
+		ConversationID: conversationID,
+		Role:           message.Role,
+		Content:        message.Content,
+		ToolCallID:     message.ToolCallID,
+		Metadata:       map[string]any{"name": message.Name},
+		CreatedAt:      time.Now().UTC(),
+	}
+	if err := e.store.AppendMessage(ctx, stored); err != nil {
+		return fmt.Errorf("append conversation message: %w", err)
+	}
+	return nil
 }
 
 func (e *Engine) succeed(ctx context.Context, execution domain.Execution) (domain.Execution, error) {

@@ -116,6 +116,26 @@ func (s *Service) StartExecution(ctx context.Context, ownerID, agentID string, i
 	if err != nil {
 		return domain.Execution{}, false, err
 	}
+	conversationID := input.ConversationID
+	if conversationID == "" {
+		conversationID, err = id.New()
+		if err != nil {
+			return domain.Execution{}, false, err
+		}
+		now := time.Now().UTC()
+		conversation := domain.Conversation{ID: conversationID, OwnerID: ownerID, AgentID: agentID, Title: truncate(input.Input, 80), CreatedAt: now, UpdatedAt: now}
+		if err := s.store.CreateConversation(ctx, conversation); err != nil {
+			return domain.Execution{}, false, fmt.Errorf("create conversation: %w", err)
+		}
+	} else {
+		conversation, err := s.store.GetConversation(ctx, ownerID, conversationID)
+		if err != nil {
+			return domain.Execution{}, false, err
+		}
+		if conversation.AgentID != agentID {
+			return domain.Execution{}, false, fmt.Errorf("conversation belongs to another agent")
+		}
+	}
 	executionID, err := id.New()
 	if err != nil {
 		return domain.Execution{}, false, err
@@ -133,7 +153,7 @@ func (s *Service) StartExecution(ctx context.Context, ownerID, agentID string, i
 		IdempotencyKey: input.IdempotencyKey,
 		AgentID:        agent.ID,
 		OwnerID:        ownerID,
-		ConversationID: input.ConversationID,
+		ConversationID: conversationID,
 		Input:          input.Input,
 		Status:         domain.ExecutionQueued,
 		Model:          agent.Model,
@@ -166,6 +186,14 @@ func (s *Service) ListExecutions(ctx context.Context, ownerID, agentID string, l
 		limit = 20
 	}
 	return s.store.ListAgentExecutions(ctx, ownerID, agentID, limit)
+}
+
+func truncate(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= limit {
+		return value
+	}
+	return value[:limit]
 }
 
 func validateAgent(input AgentInput) error {
