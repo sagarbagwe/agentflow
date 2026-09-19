@@ -1,0 +1,213 @@
+openapi: 3.1.0
+info:
+  title: AgentFlow API
+  version: 0.1.0
+  description: API for creating, executing, tracing, and monitoring AI agents.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+  - apiKeyAuth: []
+paths:
+  /healthz:
+    get:
+      security: []
+      summary: Liveness probe
+      responses:
+        '200': {description: Healthy}
+  /readyz:
+    get:
+      security: []
+      summary: Readiness probe
+      responses:
+        '200': {description: Ready}
+  /api/v1/agents:
+    post:
+      summary: Create an agent
+      operationId: createAgent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AgentInput'}
+      responses:
+        '201':
+          description: Agent created
+          content: {application/json: {schema: {$ref: '#/components/schemas/Agent'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /api/v1/agents/{agentId}:
+    parameters:
+      - $ref: '#/components/parameters/AgentId'
+    get:
+      summary: Get an agent
+      responses:
+        '200': {description: Agent, content: {application/json: {schema: {$ref: '#/components/schemas/Agent'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      summary: Create a new agent version
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AgentInput'}}}
+      responses:
+        '200': {description: Updated agent, content: {application/json: {schema: {$ref: '#/components/schemas/Agent'}}}}
+    delete:
+      summary: Delete an agent
+      responses:
+        '204': {description: Deleted}
+  /api/v1/agents/{agentId}/execute:
+    parameters:
+      - $ref: '#/components/parameters/AgentId'
+      - name: Idempotency-Key
+        in: header
+        schema: {type: string, maxLength: 255}
+    post:
+      summary: Queue an asynchronous agent execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input]
+              properties:
+                input: {type: string}
+                conversation_id: {type: string}
+      responses:
+        '202': {description: Queued execution, content: {application/json: {schema: {$ref: '#/components/schemas/Execution'}}}}
+  /api/v1/agents/{agentId}/executions:
+    parameters:
+      - $ref: '#/components/parameters/AgentId'
+      - name: limit
+        in: query
+        schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+    get:
+      summary: List recent executions for an agent
+      responses:
+        '200':
+          description: Execution list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Execution'}}
+  /api/v1/executions/{executionId}:
+    parameters:
+      - $ref: '#/components/parameters/ExecutionId'
+    get:
+      summary: Get execution state and result
+      responses:
+        '200': {description: Execution, content: {application/json: {schema: {$ref: '#/components/schemas/Execution'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/executions/{executionId}/trace:
+    parameters:
+      - $ref: '#/components/parameters/ExecutionId'
+    get:
+      summary: Get execution trace steps
+      responses:
+        '200':
+          description: Execution trace
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  execution: {$ref: '#/components/schemas/Execution'}
+                  steps: {type: array, items: {$ref: '#/components/schemas/Step'}}
+  /api/v1/executions/{executionId}/stream:
+    parameters:
+      - $ref: '#/components/parameters/ExecutionId'
+    get:
+      summary: Upgrade to a WebSocket execution-event stream
+      description: Emits agent.started, agent.thinking, tool.started, tool.completed, agent.completed, and agent.failed events.
+      responses:
+        '101': {description: WebSocket upgrade}
+  /api/v1/tools:
+    post:
+      summary: Register a deterministic runtime tool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description, responses]
+              properties:
+                name: {type: string}
+                description: {type: string}
+                responses: {type: object, additionalProperties: {type: string}}
+      responses:
+        '201': {description: Tool registered}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+    apiKeyAuth: {type: apiKey, in: header, name: X-API-Key}
+  parameters:
+    AgentId: {name: agentId, in: path, required: true, schema: {type: string}}
+    ExecutionId: {name: executionId, in: path, required: true, schema: {type: string}}
+  responses:
+    BadRequest: {description: Invalid request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Unauthorized: {description: Missing or invalid credentials, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    NotFound: {description: Resource not found, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties: {error: {type: string}}
+    AgentInput:
+      type: object
+      required: [name, system_prompt, model, max_tokens]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        system_prompt: {type: string}
+        model: {type: string}
+        temperature: {type: number, minimum: 0, maximum: 2}
+        max_tokens: {type: integer, minimum: 1}
+        tools: {type: array, items: {type: string}}
+    Agent:
+      allOf:
+        - $ref: '#/components/schemas/AgentInput'
+        - type: object
+          required: [id, owner_id, version, created_at, updated_at]
+          properties:
+            id: {type: string}
+            owner_id: {type: string}
+            version: {type: integer}
+            created_at: {type: string, format: date-time}
+            updated_at: {type: string, format: date-time}
+    Execution:
+      type: object
+      required: [id, request_id, agent_id, owner_id, input, status, created_at]
+      properties:
+        id: {type: string}
+        request_id: {type: string}
+        idempotency_key: {type: string}
+        agent_id: {type: string}
+        owner_id: {type: string}
+        conversation_id: {type: string}
+        input: {type: string}
+        output: {type: string}
+        status: {type: string, enum: [queued, running, succeeded, failed, cancelled]}
+        model: {type: string}
+        prompt_tokens: {type: integer, format: int64}
+        output_tokens: {type: integer, format: int64}
+        retry_count: {type: integer}
+        error: {type: string}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+    Step:
+      type: object
+      properties:
+        id: {type: string}
+        execution_id: {type: string}
+        type: {type: string, enum: [llm, tool]}
+        name: {type: string}
+        input: {type: object, additionalProperties: true}
+        output: {type: object, additionalProperties: true}
+        error: {type: string}
+        retry_count: {type: integer}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
