@@ -74,19 +74,31 @@ func main() {
 		Tools:   registry,
 	})
 
+	if cfg.RunMode != "api" && cfg.RunMode != "worker" && cfg.RunMode != "all" {
+		logger.Error("RUN_MODE must be api, worker, or all", "run_mode", cfg.RunMode)
+		os.Exit(1)
+	}
+
 	workerCtx, cancelWorkers := context.WithCancel(context.Background())
 	defer cancelWorkers()
-	go func() {
-		if err := jobWorker.Run(workerCtx, cfg.WorkerConcurrency); err != nil && !errors.Is(err, context.Canceled) {
-			logger.Error("worker pool stopped", "error", err)
-		}
-	}()
+	if cfg.RunMode == "worker" || cfg.RunMode == "all" {
+		go func() {
+			logger.Info("worker pool started", "concurrency", cfg.WorkerConcurrency)
+			if err := jobWorker.Run(workerCtx, cfg.WorkerConcurrency); err != nil && !errors.Is(err, context.Canceled) {
+				logger.Error("worker pool stopped", "error", err)
+			}
+		}()
+	}
 
-	serverErrors := make(chan error, 1)
-	go func() {
-		logger.Info("API server started", "address", server.Addr)
-		serverErrors <- server.ListenAndServe()
-	}()
+	var serverErrors <-chan error
+	if cfg.RunMode == "api" || cfg.RunMode == "all" {
+		errorsChannel := make(chan error, 1)
+		serverErrors = errorsChannel
+		go func() {
+			logger.Info("API server started", "address", server.Addr)
+			errorsChannel <- server.ListenAndServe()
+		}()
+	}
 
 	select {
 	case <-ctx.Done():
@@ -98,11 +110,13 @@ func main() {
 	}
 
 	cancelWorkers()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		logger.Error("graceful shutdown failed", "error", err)
-		os.Exit(1)
+	if cfg.RunMode == "api" || cfg.RunMode == "all" {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Error("graceful shutdown failed", "error", err)
+			os.Exit(1)
+		}
 	}
 	logger.Info("AgentFlow stopped")
 }

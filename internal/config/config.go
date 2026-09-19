@@ -21,6 +21,7 @@ type Config struct {
 	LLMBaseURL        string
 	LLMAPIKey         string
 	LLMProvider       string
+	RunMode           string
 }
 
 type HTTPConfig struct {
@@ -77,6 +78,7 @@ func Load() (Config, error) {
 		LLMBaseURL:        stringFromEnv("LLM_BASE_URL", "https://api.openai.com/v1"),
 		LLMAPIKey:         os.Getenv("LLM_API_KEY"),
 		LLMProvider:       stringFromEnv("LLM_PROVIDER", "mock"),
+		RunMode:           stringFromEnv("RUN_MODE", "all"),
 	}, nil
 }
 

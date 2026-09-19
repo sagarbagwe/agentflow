@@ -1,0 +1,17 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "panels": [
+    {"type":"timeseries","title":"Agent Requests","id":1,"gridPos":{"h":8,"w":12,"x":0,"y":0},"targets":[{"expr":"rate(agent_requests_total[5m])","legendFormat":"requests/s"}]},
+    {"type":"timeseries","title":"Agent Errors","id":2,"gridPos":{"h":8,"w":12,"x":12,"y":0},"targets":[{"expr":"rate(agent_errors_total[5m])","legendFormat":"errors/s"}]},
+    {"type":"timeseries","title":"LLM p95 Latency","id":3,"gridPos":{"h":8,"w":12,"x":0,"y":8},"targets":[{"expr":"histogram_quantile(0.95, sum by (le, model) (rate(llm_latency_seconds_bucket[5m])))","legendFormat":"{{model}}"}]},
+    {"type":"timeseries","title":"Token Usage","id":4,"gridPos":{"h":8,"w":12,"x":12,"y":8},"targets":[{"expr":"rate(token_usage_total[5m])","legendFormat":"{{model}} {{direction}}"}]}
+  ],
+  "schemaVersion": 40,
+  "tags": ["agentflow", "ai-agents"],
+  "templating": {"list": []},
+  "time": {"from":"now-6h","to":"now"},
+  "title": "AgentFlow Overview",
+  "uid": "agentflow-overview",
+  "version": 1
+}
