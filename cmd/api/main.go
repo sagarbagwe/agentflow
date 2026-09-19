@@ -73,10 +73,10 @@ func main() {
 	}
 	broker := realtime.NewBroker()
 	provider := buildProvider(cfg)
-	engine := workflow.NewEngine(provider, registry, storage, broker)
+	metrics := observability.NewMetrics()
+	engine := workflow.NewEngine(provider, registry, storage, broker, metrics)
 	jobWorker := worker.New(jobQueue, storage, engine, logger)
 	service := app.New(storage, jobQueue)
-	metrics := observability.NewMetrics()
 	server := httpapi.New(httpapi.Dependencies{
 		Config:  cfg.HTTP,
 		Logger:  logger,

@@ -11,6 +11,7 @@ import (
 	"github.com/sagarbagwe/agentflow/internal/domain"
 	"github.com/sagarbagwe/agentflow/internal/id"
 	"github.com/sagarbagwe/agentflow/internal/llm"
+	"github.com/sagarbagwe/agentflow/internal/observability"
 	"github.com/sagarbagwe/agentflow/internal/reliability"
 	"github.com/sagarbagwe/agentflow/internal/store"
 	"github.com/sagarbagwe/agentflow/internal/tool"
@@ -29,14 +30,16 @@ type Engine struct {
 	breaker     *reliability.CircuitBreaker
 	stepTimeout time.Duration
 	maxSteps    int
+	metrics     *observability.Metrics
 }
 
-func NewEngine(provider llm.Provider, tools *tool.Registry, storage store.ExecutionStore, events EventSink) *Engine {
+func NewEngine(provider llm.Provider, tools *tool.Registry, storage store.ExecutionStore, events EventSink, metrics *observability.Metrics) *Engine {
 	return &Engine{
 		provider: provider,
 		tools:    tools,
 		store:    storage,
 		events:   events,
+		metrics:  metrics,
 		retryPolicy: reliability.RetryPolicy{
 			MaxAttempts: 3,
 			BaseDelay:   200 * time.Millisecond,
@@ -52,6 +55,11 @@ func (e *Engine) Execute(ctx context.Context, agent domain.Agent, execution doma
 	ctx, span := otel.Tracer("agentflow/workflow").Start(ctx, "agent.execute")
 	span.SetAttributes(attribute.String("agent.id", agent.ID), attribute.String("execution.id", execution.ID), attribute.String("llm.model", agent.Model))
 	defer span.End()
+	started := time.Now()
+	if e.metrics != nil {
+		e.metrics.AgentRequests.Inc()
+		defer func() { e.metrics.AgentDuration.Observe(time.Since(started).Seconds()) }()
+	}
 
 	now := time.Now().UTC()
 	execution.Status = domain.ExecutionRunning
@@ -81,6 +89,7 @@ func (e *Engine) Execute(ctx context.Context, agent domain.Agent, execution doma
 		stepCtx, cancel := context.WithTimeout(ctx, e.stepTimeout)
 		stepCtx, llmSpan := otel.Tracer("agentflow/workflow").Start(stepCtx, "llm.complete")
 		llmSpan.SetAttributes(attribute.String("llm.model", agent.Model), attribute.String("execution.id", execution.ID))
+		llmStarted := time.Now()
 		response, retries, callErr := reliability.Retry(stepCtx, e.retryPolicy, func(callCtx context.Context) (llm.Response, error) {
 			return e.provider.Complete(callCtx, llm.Request{
 				Model:        agent.Model,
@@ -99,6 +108,9 @@ func (e *Engine) Execute(ctx context.Context, agent domain.Agent, execution doma
 		}
 		llmSpan.End()
 		cancel()
+		if e.metrics != nil {
+			e.metrics.LLMLatency.WithLabelValues(agent.Model).Observe(time.Since(llmStarted).Seconds())
+		}
 		step.RetryCount = retries
 		execution.RetryCount += retries
 		completedAt := time.Now().UTC()
@@ -113,6 +125,10 @@ func (e *Engine) Execute(ctx context.Context, agent domain.Agent, execution doma
 		execution.Model = response.Model
 		execution.PromptTokens += response.Usage.PromptTokens
 		execution.OutputTokens += response.Usage.OutputTokens
+		if e.metrics != nil {
+			e.metrics.TokenUsage.WithLabelValues(agent.Model, "input").Add(float64(response.Usage.PromptTokens))
+			e.metrics.TokenUsage.WithLabelValues(agent.Model, "output").Add(float64(response.Usage.OutputTokens))
+		}
 		step.Output = map[string]any{"content": response.Content, "tool_call_count": len(response.ToolCalls)}
 		if err := e.store.AppendStep(ctx, step); err != nil {
 			return e.fail(ctx, execution, fmt.Errorf("store LLM step: %w", err))
@@ -160,6 +176,10 @@ func (e *Engine) executeTool(ctx context.Context, executionID string, call llm.T
 	ctx, span := otel.Tracer("agentflow/workflow").Start(ctx, "tool.execute")
 	span.SetAttributes(attribute.String("tool.name", call.Name), attribute.String("execution.id", executionID))
 	defer span.End()
+	toolStarted := time.Now()
+	if e.metrics != nil {
+		defer func() { e.metrics.ToolDuration.WithLabelValues(call.Name).Observe(time.Since(toolStarted).Seconds()) }()
+	}
 
 	item, ok := e.tools.Get(call.Name)
 	if !ok {
@@ -213,6 +233,9 @@ func (e *Engine) fail(ctx context.Context, execution domain.Execution, cause err
 	span := oteltrace.SpanFromContext(ctx)
 	span.RecordError(cause)
 	span.SetStatus(codes.Error, cause.Error())
+	if e.metrics != nil {
+		e.metrics.AgentErrors.Inc()
+	}
 	now := time.Now().UTC()
 	execution.Status = domain.ExecutionFailed
 	if errors.Is(cause, context.Canceled) {
