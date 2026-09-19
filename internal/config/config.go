@@ -22,6 +22,7 @@ type Config struct {
 	LLMAPIKey         string
 	LLMProvider       string
 	RunMode           string
+	OTLPEndpoint      string
 }
 
 type HTTPConfig struct {
@@ -79,6 +80,7 @@ func Load() (Config, error) {
 		LLMAPIKey:         os.Getenv("LLM_API_KEY"),
 		LLMProvider:       stringFromEnv("LLM_PROVIDER", "mock"),
 		RunMode:           stringFromEnv("RUN_MODE", "all"),
+		OTLPEndpoint:      os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 	}, nil
 }
 

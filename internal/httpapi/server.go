@@ -17,6 +17,7 @@ import (
 	"github.com/sagarbagwe/agentflow/internal/realtime"
 	"github.com/sagarbagwe/agentflow/internal/store"
 	"github.com/sagarbagwe/agentflow/internal/tool"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 type Dependencies struct {
@@ -55,7 +56,7 @@ func New(dependencies Dependencies) *http.Server {
 		}},
 	}
 
-	router.Use(gin.Recovery(), dependencies.Metrics.HTTPMiddleware(), requestLogger(dependencies.Logger), requestID(), bodyLimit(1<<20))
+	router.Use(gin.Recovery(), otelgin.Middleware("agentflow-api"), dependencies.Metrics.HTTPMiddleware(), requestLogger(dependencies.Logger), requestID(), bodyLimit(1<<20))
 	router.GET("/healthz", func(ctx *gin.Context) { ctx.JSON(http.StatusOK, gin.H{"status": "ok"}) })
 	router.GET("/readyz", func(ctx *gin.Context) { ctx.JSON(http.StatusOK, gin.H{"status": "ready"}) })
 	router.GET("/metrics", dependencies.Metrics.Handler())

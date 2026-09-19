@@ -66,6 +66,7 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     ports:
       - "8080:8080"
 
@@ -82,6 +83,15 @@ services:
     environment:
       <<: *agentflow-environment
       RUN_MODE: worker
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    command: ["--config=/etc/otelcol-contrib/config.yml"]
+    volumes:
+      - ./deploy/otel/collector.yml:/etc/otelcol-contrib/config.yml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
 
   prometheus:
     image: prom/prometheus:v3.1.0

@@ -14,6 +14,10 @@ import (
 	"github.com/sagarbagwe/agentflow/internal/reliability"
 	"github.com/sagarbagwe/agentflow/internal/store"
 	"github.com/sagarbagwe/agentflow/internal/tool"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 type Engine struct {
@@ -45,6 +49,10 @@ func NewEngine(provider llm.Provider, tools *tool.Registry, storage store.Execut
 }
 
 func (e *Engine) Execute(ctx context.Context, agent domain.Agent, execution domain.Execution) (domain.Execution, error) {
+	ctx, span := otel.Tracer("agentflow/workflow").Start(ctx, "agent.execute")
+	span.SetAttributes(attribute.String("agent.id", agent.ID), attribute.String("execution.id", execution.ID), attribute.String("llm.model", agent.Model))
+	defer span.End()
+
 	now := time.Now().UTC()
 	execution.Status = domain.ExecutionRunning
 	execution.StartedAt = &now
@@ -71,6 +79,8 @@ func (e *Engine) Execute(ctx context.Context, agent domain.Agent, execution doma
 		_ = e.events.Publish(ctx, Event{ExecutionID: execution.ID, Type: "agent.thinking", StepID: stepID, Timestamp: startedAt})
 
 		stepCtx, cancel := context.WithTimeout(ctx, e.stepTimeout)
+		stepCtx, llmSpan := otel.Tracer("agentflow/workflow").Start(stepCtx, "llm.complete")
+		llmSpan.SetAttributes(attribute.String("llm.model", agent.Model), attribute.String("execution.id", execution.ID))
 		response, retries, callErr := reliability.Retry(stepCtx, e.retryPolicy, func(callCtx context.Context) (llm.Response, error) {
 			return e.provider.Complete(callCtx, llm.Request{
 				Model:        agent.Model,
@@ -81,6 +91,13 @@ func (e *Engine) Execute(ctx context.Context, agent domain.Agent, execution doma
 				MaxTokens:    agent.MaxTokens,
 			})
 		})
+		if callErr != nil {
+			llmSpan.RecordError(callErr)
+			llmSpan.SetStatus(codes.Error, callErr.Error())
+		} else {
+			llmSpan.SetStatus(codes.Ok, "completed")
+		}
+		llmSpan.End()
 		cancel()
 		step.RetryCount = retries
 		execution.RetryCount += retries
@@ -140,6 +157,10 @@ func (e *Engine) executeTools(ctx context.Context, executionID string, calls []l
 }
 
 func (e *Engine) executeTool(ctx context.Context, executionID string, call llm.ToolCall) (llm.Message, error) {
+	ctx, span := otel.Tracer("agentflow/workflow").Start(ctx, "tool.execute")
+	span.SetAttributes(attribute.String("tool.name", call.Name), attribute.String("execution.id", executionID))
+	defer span.End()
+
 	item, ok := e.tools.Get(call.Name)
 	if !ok {
 		return llm.Message{}, fmt.Errorf("tool %q is not registered", call.Name)
@@ -177,6 +198,7 @@ func (e *Engine) executeTool(ctx context.Context, executionID string, call llm.T
 }
 
 func (e *Engine) succeed(ctx context.Context, execution domain.Execution) (domain.Execution, error) {
+	oteltrace.SpanFromContext(ctx).SetStatus(codes.Ok, "completed")
 	now := time.Now().UTC()
 	execution.Status = domain.ExecutionSucceeded
 	execution.CompletedAt = &now
@@ -188,6 +210,9 @@ func (e *Engine) succeed(ctx context.Context, execution domain.Execution) (domai
 }
 
 func (e *Engine) fail(ctx context.Context, execution domain.Execution, cause error) (domain.Execution, error) {
+	span := oteltrace.SpanFromContext(ctx)
+	span.RecordError(cause)
+	span.SetStatus(codes.Error, cause.Error())
 	now := time.Now().UTC()
 	execution.Status = domain.ExecutionFailed
 	if errors.Is(cause, context.Canceled) {
