@@ -1,0 +1,21 @@
+# Binaries
+/bin/
+agentflow
+
+# Go
+*.test
+*.out
+coverage.txt
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+
+# Runtime data
+/data/
